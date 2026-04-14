@@ -1,103 +1,209 @@
-# GBC Analytics Dashboard
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js 16"/>
+  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase" alt="Supabase"/>
+  <img src="https://img.shields.io/badge/RetailCRM-API%20v5-blue" alt="RetailCRM"/>
+  <img src="https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram" alt="Telegram Bot"/>
+  <img src="https://img.shields.io/badge/deploy-Vercel-black?logo=vercel" alt="Vercel"/>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"/>
+</p>
 
-Мини-дашборд заказов: RetailCRM → Supabase → Next.js (Vercel) + Telegram-уведомления.
+# GBC Analytics — Дашборд заказов
 
-## Архитектура
+**Мини-дашборд заказов с real-time уведомлениями: RetailCRM → Supabase → Next.js + Telegram Bot.**
+
+> Тестовое задание — AI Tools Specialist
+
+---
+
+## Что делает
+
+Полный pipeline обработки заказов из RetailCRM с визуализацией и мгновенными уведомлениями:
+
+- **Импорт** 50 тестовых заказов в RetailCRM через API
+- **Синхронизация** заказов из RetailCRM в Supabase (upsert по ID, без дублей)
+- **Дашборд** с графиками и KPI-метриками
+- **Telegram-бот** — мгновенное уведомление при заказе > 50 000 ₸
+- **Webhook** — автоматическая обработка новых заказов из RetailCRM
+
+---
+
+## Architecture
 
 ```
-mock_orders.json → [скрипт] → RetailCRM → [скрипт/webhook] → Supabase → Next.js Dashboard
-                                    ↓
-                              Telegram Bot (заказы > 50 000 ₸)
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│  mock_orders.json│     │   RetailCRM      │     │    Supabase      │
+│  50 заказов      │────▶│   API v5         │────▶│    PostgreSQL    │
+└──────────────────┘     │                  │     │    + RLS         │
+                         │   Webhook ──────────▶  └────────┬─────────┘
+                         └──────────────────┘              │
+                                │                          │
+                         ┌──────┴──────┐          ┌────────▼─────────┐
+                         │  Telegram   │          │   Next.js 16     │
+                         │  Bot API    │          │   Dashboard      │
+                         │  > 50k ₸    │          │   Recharts       │
+                         └─────────────┘          └──────────────────┘
 ```
 
-## Стек
+### Data Flow
 
-- **Next.js 16** (App Router, TypeScript)
-- **Supabase** — хранение заказов, RLS-политики
-- **Recharts** — графики на дашборде
-- **RetailCRM API v5** — источник заказов
-- **Telegram Bot API** — уведомления о крупных заказах
-- **Vercel** — деплой
+```
+1. import:retailcrm    mock_orders.json → RetailCRM (50 заказов)
+2. sync:supabase       RetailCRM → Supabase (upsert by retailcrm_order_id)
+3. Webhook (auto)      Новый заказ в CRM → Supabase + Telegram если > 50k ₸
+4. Dashboard           Supabase → Next.js SSR → Recharts графики
+```
 
-## Быстрый старт
+---
 
-### 1. Установи зависимости
+## Dashboard
+
+| Компонент | Описание |
+|-----------|----------|
+| KPI-карточки | Количество заказов, общая выручка, средний чек |
+| График заказов | BarChart — количество заказов по дням |
+| График выручки | BarChart — выручка по дням (₸) |
+| UTM-источники | PieChart — распределение по utm_source |
+| Статусы | PieChart — распределение по статусам |
+| Города | PieChart — распределение по городам |
+| Таблица | Последние 20 заказов с деталями |
+
+---
+
+## API Endpoints
+
+| Endpoint | Метод | Описание |
+|----------|-------|----------|
+| `/api/retailcrm/webhook` | POST | Webhook из RetailCRM — upsert заказа + Telegram при > 50k ₸ |
+| `/api/sync` | POST | Полная синхронизация RetailCRM → Supabase |
+
+Webhook защищён `WEBHOOK_SHARED_SECRET` через header `x-webhook-secret` или query `?secret=`.
+
+---
+
+## Quick Start
+
+### 1. Установка
 
 ```bash
+git clone https://github.com/Talap-creator/gbc-analytics-dashboard.git
+cd gbc-analytics-dashboard
 npm install
 ```
 
-### 2. Настрой переменные окружения
+### 2. Переменные окружения
 
 ```bash
 cp .env.example .env.local
 ```
 
-Заполни `.env.local` своими ключами (RetailCRM, Supabase, Telegram).
+Заполни `.env.local`:
 
-### 3. Создай таблицы в Supabase
-
-Выполни содержимое `supabase-schema.sql` в Supabase SQL Editor.
-
-### 4. Загрузи заказы в RetailCRM
-
-```bash
-npm run import:retailcrm
+```
+RETAILCRM_BASE_URL=https://yourshop.retailcrm.ru
+RETAILCRM_API_KEY=your_api_key
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF
+TELEGRAM_CHAT_ID=123456789
+WEBHOOK_SHARED_SECRET=your_random_secret
 ```
 
-### 5. Синхронизируй в Supabase
+### 3. База данных
+
+Выполни `supabase-schema.sql` в Supabase SQL Editor — создаст таблицы `orders` и `telegram_notifications` с индексами и RLS.
+
+### 4. Импорт и синхронизация
 
 ```bash
-npm run sync:supabase
+npm run import:retailcrm   # mock_orders.json → RetailCRM (50 заказов)
+npm run sync:supabase       # RetailCRM → Supabase
 ```
 
-### 6. Запусти дашборд
+### 5. Запуск
 
 ```bash
-npm run dev
+npm run dev                 # http://localhost:3000
 ```
 
-Открой http://localhost:3000
+---
 
-## API Endpoints
+## Supabase Schema
 
-| Endpoint | Метод | Описание |
-|---|---|---|
-| `/api/retailcrm/webhook` | POST | Webhook из RetailCRM — синхронизирует заказ и шлёт Telegram если сумма > 50 000 ₸ |
-| `/api/sync` | POST | Полная синхронизация RetailCRM → Supabase |
+| Таблица | Назначение |
+|---------|-----------|
+| `orders` | Заказы из RetailCRM (upsert по `retailcrm_order_id`) |
+| `telegram_notifications` | Дедупликация уведомлений (unique: order_id + type) |
+
+**RLS-политики:**
+- `orders` — публичное чтение (для дашборда), запись только service_role
+- `telegram_notifications` — только service_role
+
+---
 
 ## Webhook в RetailCRM
 
-После деплоя на Vercel, настрой триггер в RetailCRM:
-- URL: `https://your-app.vercel.app/api/retailcrm/webhook?secret=YOUR_WEBHOOK_SHARED_SECRET`
-- Метод: POST
-- Событие: создание заказа
+После деплоя на Vercel настрой HTTP-триггер в RetailCRM:
 
-## Переменные окружения
+| Параметр | Значение |
+|----------|---------|
+| URL | `https://your-app.vercel.app/api/retailcrm/webhook?secret=YOUR_SECRET` |
+| Метод | POST |
+| Событие | Создание заказа |
 
-| Переменная | Описание |
-|---|---|
-| `RETAILCRM_BASE_URL` | URL аккаунта RetailCRM |
-| `RETAILCRM_API_KEY` | API-ключ RetailCRM |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL проекта Supabase |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Anon-ключ Supabase |
-| `SUPABASE_URL` | URL проекта Supabase (серверный) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role ключ Supabase |
-| `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота |
-| `TELEGRAM_CHAT_ID` | ID чата для уведомлений |
-| `WEBHOOK_SHARED_SECRET` | Секрет для валидации webhook |
+При получении webhook:
+1. Загружает полную карточку заказа из RetailCRM
+2. Upsert в Supabase
+3. Если сумма > 50 000 ₸ — отправляет уведомление в Telegram (с дедупликацией)
+
+---
+
+## Tech Stack
+
+| Компонент | Технология |
+|-----------|-----------|
+| Frontend | Next.js 16, React 19, TypeScript |
+| Charts | Recharts 3 |
+| Database | Supabase (PostgreSQL + RLS) |
+| CRM | RetailCRM API v5 |
+| Notifications | Telegram Bot API |
+| Deploy | Vercel |
+| Scripts | tsx (TypeScript runner) |
+
+---
 
 ## Промпты для Claude Code
 
-Основные промпты, которые использовались:
-
-1. **Инициализация проекта** — передал ТЗ и детальный план реализации целиком, Claude Code создал всю структуру: lib/, scripts/, API routes, дашборд с Recharts, SQL-схему
-2. **Отладка импорта** — RetailCRM отклонял `orderType: "eshop-individual"` — Claude Code запросил справочник типов через API, нашёл что в демо-аккаунте тип только `main`, и адаптировал скрипт
-3. **Отладка env** — скрипты не видели переменные окружения (ES module hoisting проблема) — Claude Code поставил dotenv и переделал библиотеки на ленивое чтение env
-4. **Проверка Telegram** — curl на Windows не передавал кириллицу, подтвердили через Node.js fetch что в приложении всё ОК
+| # | Промпт | Результат |
+|---|--------|----------|
+| 1 | Передал полное ТЗ + детальный план архитектуры | Создал всю структуру за один проход: lib/, scripts/, API routes, дашборд, SQL-схему |
+| 2 | Запустил импорт — ошибка `orderType not found` | Claude запросил справочник через API, нашёл что в демо `eshop-individual` → `main`, адаптировал |
+| 3 | Скрипты не видели env vars | Диагностировал ES module hoisting, установил dotenv, переделал на ленивое чтение |
+| 4 | Кириллица в Telegram битая | Определил что проблема только в curl на Windows, подтвердил через Node.js fetch |
 
 ## Где застрял и как решил
 
-- **RetailCRM API key** — первый ключ не работал (403), пересоздал новый — заработало
-- **orderType не существует** — в демо-аккаунте нет `eshop-individual`, есть только `main`. Решение: запросил `/api/v5/reference/order-types` и подставил реальный код
-- **dotenv + ES modules** — `import` поднимается выше `dotenv.config()`, поэтому переменные были `undefined`. Решение: переделал модули на ленивое чтение `process.env` через функции
+| Проблема | Причина | Решение |
+|----------|---------|---------|
+| API key 403 | Первый ключ оказался невалидным | Пересоздал ключ в RetailCRM |
+| `orderType` does not exist | В демо-аккаунте нет `eshop-individual` | Запросил `/reference/order-types`, подставил `main` |
+| `Invalid URL` при импорте | ES module hoisting — `process.env` читается до `dotenv.config()` | Переделал модули на функции-геттеры вместо top-level констант |
+| Кракозябры в Telegram | Windows curl некорректно отправляет UTF-8 | Проблема только в тесте, в Node.js приложении кириллица ОК |
+
+---
+
+## Scripts
+
+```bash
+npm run dev                # Запуск dev-сервера
+npm run build              # Production сборка
+npm run import:retailcrm   # Импорт mock_orders.json → RetailCRM
+npm run sync:supabase      # Синхронизация RetailCRM → Supabase
+```
+
+---
+
+## License
+
+MIT
