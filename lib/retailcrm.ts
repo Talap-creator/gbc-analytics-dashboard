@@ -69,6 +69,6 @@ export async function getOrders(
 }
 
 export async function getOrderById(id: string | number): Promise<any> {
-  const data = await retailcrmGet(`orders/${id}`);
+  const data = await retailcrmGet(`orders/${id}`, { by: "id" });
   return data.order;
 }
