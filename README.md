@@ -1,39 +1,103 @@
-# Тестовое задание — AI Tools Specialist
+# GBC Analytics Dashboard
 
-Построй мини-дашборд заказов. Используй Claude Code CLI (или другой AI-инструмент).
+Мини-дашборд заказов: RetailCRM → Supabase → Next.js (Vercel) + Telegram-уведомления.
 
-## Что нужно сделать
+## Архитектура
 
-### Шаг 1: Создай аккаунты (всё бесплатно)
+```
+mock_orders.json → [скрипт] → RetailCRM → [скрипт/webhook] → Supabase → Next.js Dashboard
+                                    ↓
+                              Telegram Bot (заказы > 50 000 ₸)
+```
 
-- [RetailCRM](https://www.retailcrm.ru/) — демо-аккаунт
-- [Supabase](https://supabase.com/) — бесплатный проект
-- [Vercel](https://vercel.com/) — бесплатный аккаунт
-- [Telegram Bot](https://t.me/BotFather) — создай бота
+## Стек
 
-### Шаг 2: Загрузи заказы в RetailCRM
+- **Next.js 16** (App Router, TypeScript)
+- **Supabase** — хранение заказов, RLS-политики
+- **Recharts** — графики на дашборде
+- **RetailCRM API v5** — источник заказов
+- **Telegram Bot API** — уведомления о крупных заказах
+- **Vercel** — деплой
 
-В репо есть `mock_orders.json` — 50 тестовых заказов. Загрузи их в свой RetailCRM через API.
+## Быстрый старт
 
-### Шаг 3: RetailCRM → Supabase
+### 1. Установи зависимости
 
-Напиши скрипт который забирает заказы из RetailCRM API и кладёт в Supabase.
+```bash
+npm install
+```
 
-### Шаг 4: Дашборд
+### 2. Настрой переменные окружения
 
-Сделай веб-страницу с графиком заказов (данные из Supabase). Задеплой на Vercel.
+```bash
+cp .env.example .env.local
+```
 
-### Шаг 5: Telegram-бот
+Заполни `.env.local` своими ключами (RetailCRM, Supabase, Telegram).
 
-Настрой уведомление в Telegram когда в RetailCRM появляется заказ на сумму больше 50,000 ₸.
+### 3. Создай таблицы в Supabase
 
-## Результат
+Выполни содержимое `supabase-schema.sql` в Supabase SQL Editor.
 
-- Ссылка на работающий дашборд (Vercel)
-- Ссылка на GitHub-репо с кодом
-- Скриншот уведомления из Telegram
-- В README репо опиши: какие промпты давал Claude Code, где застрял, как решил
+### 4. Загрузи заказы в RetailCRM
 
-## Как сдать
+```bash
+npm run import:retailcrm
+```
 
-Отправь результат в Telegram: @DmitriyKrasnikov
+### 5. Синхронизируй в Supabase
+
+```bash
+npm run sync:supabase
+```
+
+### 6. Запусти дашборд
+
+```bash
+npm run dev
+```
+
+Открой http://localhost:3000
+
+## API Endpoints
+
+| Endpoint | Метод | Описание |
+|---|---|---|
+| `/api/retailcrm/webhook` | POST | Webhook из RetailCRM — синхронизирует заказ и шлёт Telegram если сумма > 50 000 ₸ |
+| `/api/sync` | POST | Полная синхронизация RetailCRM → Supabase |
+
+## Webhook в RetailCRM
+
+После деплоя на Vercel, настрой триггер в RetailCRM:
+- URL: `https://your-app.vercel.app/api/retailcrm/webhook?secret=YOUR_WEBHOOK_SHARED_SECRET`
+- Метод: POST
+- Событие: создание заказа
+
+## Переменные окружения
+
+| Переменная | Описание |
+|---|---|
+| `RETAILCRM_BASE_URL` | URL аккаунта RetailCRM |
+| `RETAILCRM_API_KEY` | API-ключ RetailCRM |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL проекта Supabase |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Anon-ключ Supabase |
+| `SUPABASE_URL` | URL проекта Supabase (серверный) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role ключ Supabase |
+| `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота |
+| `TELEGRAM_CHAT_ID` | ID чата для уведомлений |
+| `WEBHOOK_SHARED_SECRET` | Секрет для валидации webhook |
+
+## Промпты для Claude Code
+
+Основные промпты, которые использовались:
+
+1. **Инициализация проекта** — передал ТЗ и детальный план реализации целиком, Claude Code создал всю структуру: lib/, scripts/, API routes, дашборд с Recharts, SQL-схему
+2. **Отладка импорта** — RetailCRM отклонял `orderType: "eshop-individual"` — Claude Code запросил справочник типов через API, нашёл что в демо-аккаунте тип только `main`, и адаптировал скрипт
+3. **Отладка env** — скрипты не видели переменные окружения (ES module hoisting проблема) — Claude Code поставил dotenv и переделал библиотеки на ленивое чтение env
+4. **Проверка Telegram** — curl на Windows не передавал кириллицу, подтвердили через Node.js fetch что в приложении всё ОК
+
+## Где застрял и как решил
+
+- **RetailCRM API key** — первый ключ не работал (403), пересоздал новый — заработало
+- **orderType не существует** — в демо-аккаунте нет `eshop-individual`, есть только `main`. Решение: запросил `/api/v5/reference/order-types` и подставил реальный код
+- **dotenv + ES modules** — `import` поднимается выше `dotenv.config()`, поэтому переменные были `undefined`. Решение: переделал модули на ленивое чтение `process.env` через функции
