@@ -20,25 +20,72 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
   return true;
 }
 
+interface OrderItem {
+  productName: string;
+  quantity: number;
+  initialPrice: number;
+}
+
 export function formatOrderNotification(order: {
   retailcrm_order_id: string | number;
   order_number?: string;
   first_name?: string;
   last_name?: string;
+  phone?: string;
+  email?: string;
   total_amount: number;
   city?: string;
+  address_text?: string;
+  utm_source?: string;
+  status?: string;
+  items?: OrderItem[];
   item_count?: number;
+  created_at_retailcrm?: string;
 }): string {
   const name = [order.first_name, order.last_name].filter(Boolean).join(" ");
+  const crmUrl = process.env.RETAILCRM_BASE_URL;
+  const orderLink = crmUrl
+    ? `<a href="${crmUrl}/orders/${order.retailcrm_order_id}/edit">#${order.order_number || order.retailcrm_order_id}</a>`
+    : `#${order.order_number || order.retailcrm_order_id}`;
+
+  const items = order.items || [];
+  const itemLines = items.map(
+    (item) =>
+      `  • ${item.productName} × ${item.quantity} — ${(item.initialPrice * item.quantity).toLocaleString("ru-RU")} ₸`
+  );
+
+  const date = order.created_at_retailcrm
+    ? new Date(order.created_at_retailcrm).toLocaleString("ru-RU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
   return [
-    `<b>Новый крупный заказ!</b>`,
+    `🔔 <b>Новый крупный заказ!</b>`,
     ``,
-    `Заказ: #${order.order_number || order.retailcrm_order_id}`,
-    `Клиент: ${name || "—"}`,
-    `Сумма: <b>${order.total_amount.toLocaleString("ru-RU")} ₸</b>`,
+    `📦 <b>Заказ:</b> ${orderLink}`,
+    `💰 <b>Сумма: ${order.total_amount.toLocaleString("ru-RU")} ₸</b>`,
+    ``,
+    `👤 <b>Клиент</b>`,
+    `Имя: ${name || "—"}`,
+    order.phone ? `Тел: ${order.phone}` : null,
+    order.email ? `Email: ${order.email}` : null,
+    ``,
+    order.city || order.address_text ? `📍 <b>Доставка</b>` : null,
     order.city ? `Город: ${order.city}` : null,
-    order.item_count ? `Позиций: ${order.item_count}` : null,
+    order.address_text ? `Адрес: ${order.address_text}` : null,
+    ``,
+    items.length > 0 ? `🛒 <b>Товары (${items.length})</b>` : null,
+    ...itemLines,
+    ``,
+    order.utm_source ? `📊 Источник: ${order.utm_source}` : null,
+    order.status ? `📋 Статус: ${order.status}` : null,
+    date ? `🕐 Создан: ${date}` : null,
   ]
-    .filter(Boolean)
+    .filter((line) => line != null)
     .join("\n");
 }
